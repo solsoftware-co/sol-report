@@ -1,0 +1,36 @@
+name: Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  # Idempotent — 404 (already gone, or never deployed) counts as success, same
+  # as sol-integrate's cleanup.yml. The per-PR workflow is its own Cloudflare
+  # resource, not part of the Worker, so it's deleted separately; wrangler 3
+  # has no `workflows delete`, hence the API call.
+  delete-preview:
+    name: Delete preview worker and workflow
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete preview worker
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/workers/services/sol-report-pr-${{ github.event.pull_request.number }}" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}")
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "404" ]; then
+            echo "Unexpected status $STATUS from Cloudflare worker delete"
+            exit 1
+          fi
+          echo "Worker deleted (status: $STATUS)"
+      - name: Delete preview workflow
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+            "https://api.cloudflare.com/client/v4/accounts/${{ secrets.CLOUDFLARE_ACCOUNT_ID }}/workflows/sol-report-run-pr-${{ github.event.pull_request.number }}" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}")
+          if [ "$STATUS" != "200" ] && [ "$STATUS" != "404" ]; then
+            echo "Unexpected status $STATUS from Cloudflare workflow delete"
+            exit 1
+          fi
+          echo "Workflow deleted (status: $STATUS)"

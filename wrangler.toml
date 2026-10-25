@@ -1,0 +1,113 @@
+name = "sol-report"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[dev]
+ip = "0.0.0.0"
+port = 8791
+
+[vars]
+ENVIRONMENT = "development"
+
+# Locally there's no cron: trigger a tick with `npm run dev` (which passes
+# --test-scheduled) and `curl "http://localhost:8791/__scheduled?cron=0+0+*+*+*"`.
+[triggers]
+crons = []
+
+# sol-api is reached through a service binding (env.SOL_API), never a URL —
+# a plain fetch() to another Worker on the same workers.dev subdomain fails
+# with "error code: 1042" (same as sol-notify / sol-integrate / sol-gate).
+# Bindings, triggers and workflows aren't inherited, so each environment
+# declares its own. Locally, `wrangler dev` connects this to sol-api's own
+# `wrangler dev` session (Worker name "sol-api") when it's running.
+#
+# Not bound yet: SOL_NOTIFY (phase 6) and the REPORTS R2 bucket (phase 5) —
+# see sol-brain/sol-report/03-implementation-plan.md.
+[[services]]
+binding = "SOL_API"
+service = "sol-api"
+
+# One instance per report occurrence: sleeps until the send time, then
+# builds and sends the report.
+[[workflows]]
+name = "sol-report-run-dev"
+binding = "REPORT_WORKFLOW"
+class_name = "ReportWorkflow"
+
+[observability]
+enabled = true
+
+# Ephemeral per-PR previews. .github/workflows/pr.yml rewrites both names
+# below to their -pr-<N> forms in its own checkout before deploying — keep
+# the lines exactly `name = "sol-report-preview"` and
+# `name = "sol-report-run-preview"` so those substitutions match. Previews
+# keep a public workers.dev URL (only /health is served) and never run the
+# cron; cleanup.yml deletes the Worker and its workflow when the PR closes.
+[env.preview]
+name = "sol-report-preview"
+workers_dev = true
+
+[env.preview.vars]
+ENVIRONMENT = "preview"
+
+[env.preview.triggers]
+crons = []
+
+[[env.preview.services]]
+binding = "SOL_API"
+service = "sol-api-dev"
+
+[[env.preview.workflows]]
+name = "sol-report-run-preview"
+binding = "REPORT_WORKFLOW"
+class_name = "ReportWorkflow"
+
+[env.preview.observability]
+enabled = true
+
+# Staging and production are internal-only: no workers.dev URL, no routes.
+# Nothing calls sol-report — it runs on its daily 00:00 UTC cron.
+[env.staging]
+name = "sol-report-staging"
+workers_dev = false
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+
+[env.staging.triggers]
+crons = ["0 0 * * *"]
+
+[[env.staging.services]]
+binding = "SOL_API"
+service = "sol-api-staging"
+
+[[env.staging.workflows]]
+name = "sol-report-run-staging"
+binding = "REPORT_WORKFLOW"
+class_name = "ReportWorkflow"
+
+[env.staging.observability]
+enabled = true
+
+[env.production]
+name = "sol-report"
+workers_dev = false
+
+[env.production.vars]
+ENVIRONMENT = "production"
+
+[env.production.triggers]
+crons = ["0 0 * * *"]
+
+[[env.production.services]]
+binding = "SOL_API"
+service = "sol-api"
+
+[[env.production.workflows]]
+name = "sol-report-run"
+binding = "REPORT_WORKFLOW"
+class_name = "ReportWorkflow"
+
+[env.production.observability]
+enabled = true
